@@ -6,6 +6,10 @@ const twilio = require("twilio");
 const mongoose = require("mongoose");
 const bcrypt = require('bcrypt');
 
+// Removed Firebase Admin SDK import and serviceAccountKey.json requirement
+// const admin = require("firebase-admin");
+// const serviceAccount = require("./serviceAccountKey.json");
+
 const User = require("./models/User");
 const Job = require("./models/job");
 const connectDB = require('./db');
