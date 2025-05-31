@@ -6,9 +6,7 @@ const twilio = require("twilio");
 const mongoose = require("mongoose");
 const bcrypt = require('bcrypt');
 
-// Removed Firebase Admin SDK import and serviceAccountKey.json requirement
-// const admin = require("firebase-admin");
-// const serviceAccount = require("./serviceAccountKey.json");
+
 
 const User = require("./models/User");
 const Job = require("./models/job");
@@ -171,6 +169,39 @@ app.get("/api/jobs", async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 });
+
+app.get('/api/user/:email/data', async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.params.email })
+      .populate('postedJobs')
+      .populate('acceptedJobs')
+      .populate('completedJobs')
+      .populate('earnings.jobId');
+
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    res.json({
+      success: true,
+      data: {
+        email: user.email,
+        username: user.username,
+        phoneNumber: user.phoneNumber,
+        postedJobs: user.postedJobs,
+        acceptedJobs: user.acceptedJobs,
+        completedJobs: user.completedJobs,
+        earnings: user.earnings.map(e => ({
+          jobTitle: e.jobId?.title,
+          amount: e.amount,
+          date: e.date
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Error loading user data:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 
 // Start server
 app.listen(PORT, () => {
