@@ -6,8 +6,7 @@ const twilio = require("twilio");
 const mongoose = require("mongoose");
 const bcrypt = require('bcrypt');
 
-
-
+// Models & DB
 const User = require("./models/User");
 const Job = require("./models/job");
 const connectDB = require('./db');
@@ -22,13 +21,12 @@ app.use(express.json());
 // ✅ Connect to MongoDB
 connectDB();
 
-// OTP in-memory store
+// In-memory OTP Store
 const otpStore = new Map();
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 // ========== OTP Services ==========
 
-// Send OTP
 const sendOtpService = async (phoneNumber) => {
   try {
     const fullPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : '+91' + phoneNumber;
@@ -50,16 +48,16 @@ const sendOtpService = async (phoneNumber) => {
   }
 };
 
-// Verify OTP
 const verifyOtpService = async (phoneNumber, code) => {
   try {
     const record = otpStore.get(phoneNumber);
-
     if (!record) return { success: false, message: "OTP not found or expired" };
+
     if (record.expiresAt < Date.now()) {
       otpStore.delete(phoneNumber);
       return { success: false, message: "OTP expired" };
     }
+
     if (record.otp.toString() === code.toString()) {
       otpStore.delete(phoneNumber);
       return { success: true, message: "OTP verified successfully" };
@@ -101,14 +99,12 @@ app.post('/api/register', async (req, res) => {
     return res.status(400).json({ success: false, message: 'All fields are required' });
 
   try {
-    const userExists = await User.findOne({
-      $or: [{ email }, { username }, { phoneNumber }]
-    });
-
+    const userExists = await User.findOne({ $or: [{ email }, { username }, { phoneNumber }] });
     if (userExists)
       return res.status(409).json({ success: false, message: 'User already exists' });
 
-    const newUser = new User({ email, username, password, phoneNumber });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = new User({ email, username, password: hashedPassword, phoneNumber });
     await newUser.save();
 
     res.status(201).json({ success: true, message: 'User registered successfully' });
@@ -135,24 +131,25 @@ app.post('/api/login', async (req, res) => {
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) return res.status(401).json({ message: "Invalid credentials" });
 
-    return res.status(200).json({ message: "Login successful" });
+    return res.status(200).json({ message: "Login successful", userId: user._id });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "Server error" });
   }
 });
 
-// ✅ Post a Job (no Firebase)
+// Post a Job
 app.post('/api/jobs', async (req, res) => {
   try {
     const job = new Job(req.body);
     await job.save();
 
-    res.status(201).json({
-      success: true,
-      message: 'Job posted successfully',
-      job
-    });
+    // Add job to user
+    const user = await User.findById(job.postedBy);
+    user.postedJobs.push(job._id);
+    await user.save();
+
+    res.status(201).json({ success: true, message: 'Job posted successfully', job });
   } catch (error) {
     console.error("Error posting job:", error);
     res.status(500).json({ success: false, message: 'Server error' });
@@ -170,6 +167,65 @@ app.get("/api/jobs", async (req, res) => {
   }
 });
 
+// Accept Job
+app.post('/api/job/accept', async (req, res) => {
+  const { userId, jobId } = req.body;
+
+  if (!userId || !jobId)
+    return res.status(400).json({ success: false, message: 'User ID and Job ID are required' });
+
+  try {
+    const user = await User.findById(userId);
+    const job = await Job.findById(jobId);
+
+    if (!user || !job)
+      return res.status(404).json({ success: false, message: 'User or Job not found' });
+
+    if (!user.acceptedJobs.includes(jobId)) {
+      user.acceptedJobs.push(jobId);
+      await user.save();
+    }
+
+    res.status(200).json({ success: true, message: 'Job accepted successfully', acceptedJobs: user.acceptedJobs });
+  } catch (error) {
+    console.error('Error accepting job:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Complete Job
+app.post('/api/job/complete', async (req, res) => {
+  const { userId, jobId, amount } = req.body;
+
+  if (!userId || !jobId || !amount)
+    return res.status(400).json({ success: false, message: 'All fields required' });
+
+  try {
+    const user = await User.findById(userId);
+    const job = await Job.findById(jobId);
+
+    if (!user || !job)
+      return res.status(404).json({ success: false, message: 'User or Job not found' });
+
+    user.acceptedJobs = user.acceptedJobs.filter(id => id.toString() !== jobId);
+    if (!user.completedJobs.includes(jobId)) user.completedJobs.push(jobId);
+
+    user.earnings.push({
+      jobId: job._id,
+      amount,
+      date: new Date()
+    });
+
+    await user.save();
+
+    res.status(200).json({ success: true, message: 'Job marked as completed', completedJobs: user.completedJobs, earnings: user.earnings });
+  } catch (error) {
+    console.error('Error completing job:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Get user-specific data
 app.get('/api/user/:email/data', async (req, res) => {
   try {
     const user = await User.findOne({ email: req.params.email })
@@ -201,7 +257,6 @@ app.get('/api/user/:email/data', async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
-
 
 // Start server
 app.listen(PORT, () => {
