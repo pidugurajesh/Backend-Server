@@ -1,6 +1,5 @@
 require("dotenv").config();
 const express = require("express");
-const bodyParser = require("body-parser");
 const cors = require("cors");
 const twilio = require("twilio");
 const mongoose = require("mongoose");
@@ -14,19 +13,17 @@ const connectDB = require('./db');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(bodyParser.json());
 app.use(cors());
 app.use(express.json());
 
 // ✅ Connect to MongoDB
 connectDB();
 
-// In-memory OTP Store
+// ✅ In-memory OTP Store
 const otpStore = new Map();
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 // ========== OTP Services ==========
-
 const sendOtpService = async (phoneNumber) => {
   try {
     const fullPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : '+91' + phoneNumber;
@@ -40,7 +37,6 @@ const sendOtpService = async (phoneNumber) => {
 
     otpStore.set(fullPhoneNumber, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
     console.log(`✅ OTP ${otp} sent to ${fullPhoneNumber}`);
-
     return { success: true, message: "OTP sent successfully" };
   } catch (error) {
     console.error("❌ Error sending OTP:", error);
@@ -50,16 +46,17 @@ const sendOtpService = async (phoneNumber) => {
 
 const verifyOtpService = async (phoneNumber, code) => {
   try {
-    const record = otpStore.get(phoneNumber);
+    const fullPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : '+91' + phoneNumber;
+    const record = otpStore.get(fullPhoneNumber);
     if (!record) return { success: false, message: "OTP not found or expired" };
 
     if (record.expiresAt < Date.now()) {
-      otpStore.delete(phoneNumber);
+      otpStore.delete(fullPhoneNumber);
       return { success: false, message: "OTP expired" };
     }
 
     if (record.otp.toString() === code.toString()) {
-      otpStore.delete(phoneNumber);
+      otpStore.delete(fullPhoneNumber);
       return { success: true, message: "OTP verified successfully" };
     } else {
       return { success: false, message: "Invalid OTP" };
@@ -72,7 +69,7 @@ const verifyOtpService = async (phoneNumber, code) => {
 
 // ========== Routes ==========
 
-// Send OTP
+// ✅ Send OTP
 app.post("/api/otp/send", async (req, res) => {
   const { phoneNumber } = req.body;
   if (!phoneNumber) return res.status(400).json({ success: false, message: "Phone number is required" });
@@ -81,17 +78,16 @@ app.post("/api/otp/send", async (req, res) => {
   res.json(result);
 });
 
-// Verify OTP
+// ✅ Verify OTP
 app.post("/api/otp/verify", async (req, res) => {
   const { phoneNumber, code } = req.body;
   if (!phoneNumber || !code) return res.status(400).json({ success: false, message: "Phone number and OTP code are required" });
 
-  const fullPhoneNumber = phoneNumber.startsWith('+') ? phoneNumber : '+91' + phoneNumber;
-  const result = await verifyOtpService(fullPhoneNumber, code);
+  const result = await verifyOtpService(phoneNumber, code);
   res.json(result);
 });
 
-// Register
+// ✅ Register
 app.post('/api/register', async (req, res) => {
   const { email, username, password, phoneNumber } = req.body;
 
@@ -117,10 +113,9 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// Login
+// ✅ Login
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
-
   if (!email || !password)
     return res.status(400).json({ message: "Please provide both email and password" });
 
@@ -138,7 +133,7 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Post a Job
+// ✅ Post a Job
 app.post('/api/jobs', async (req, res) => {
   try {
     const job = new Job(req.body);
@@ -157,7 +152,7 @@ app.post('/api/jobs', async (req, res) => {
   }
 });
 
-// Get all jobs
+// ✅ Get all jobs
 app.get("/api/jobs", async (req, res) => {
   try {
     const jobs = await Job.find();
@@ -168,8 +163,8 @@ app.get("/api/jobs", async (req, res) => {
   }
 });
 
-// Accept Job
-app.post('/api/jobs/accept', async (req, res) => {
+// ✅ Accept Job
+app.post('/api/job/accept', async (req, res) => {
   try {
     const { userId, jobId } = req.body;
 
@@ -180,7 +175,6 @@ app.post('/api/jobs/accept', async (req, res) => {
       return res.status(404).json({ success: false, message: 'User or Job not found' });
     }
 
-    // Prevent duplicate acceptance
     if (user.acceptedJobs.includes(jobId)) {
       return res.status(400).json({ success: false, message: 'Job already accepted' });
     }
@@ -195,7 +189,7 @@ app.post('/api/jobs/accept', async (req, res) => {
   }
 });
 
-// Complete Job
+// ✅ Complete Job
 app.post('/api/job/complete', async (req, res) => {
   const { userId, jobId, amount } = req.body;
 
@@ -227,7 +221,7 @@ app.post('/api/job/complete', async (req, res) => {
   }
 });
 
-// Get user-specific data
+// ✅ Get user-specific data
 app.get('/api/user/:email/data', async (req, res) => {
   try {
     const user = await User.findOne({ email: req.params.email })
@@ -260,8 +254,7 @@ app.get('/api/user/:email/data', async (req, res) => {
   }
 });
 
-
-// Start server
+// ✅ Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
