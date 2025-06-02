@@ -138,7 +138,7 @@ app.post('/api/login', async (req, res) => {
 
 // ✅ Post a Job
 app.post('/api/jobs', async (req, res) => {
-  const { postedBy } = req.body;
+  const { postedBy, _id } = req.body;
 
   if (!postedBy)
     return res.status(400).json({ success: false, message: 'postedBy field is required' });
@@ -146,11 +146,16 @@ app.post('/api/jobs', async (req, res) => {
   if (!isValidObjectId(postedBy))
     return res.status(400).json({ success: false, message: 'Invalid postedBy user ID format' });
 
+  // ✅ Delete empty _id if present
+  if (_id === "") {
+    delete req.body._id;
+  }
+
   try {
     const user = await User.findById(postedBy);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    const job = new Job(req.body);
+    const job = new Job(req.body); // _id is now safely removed if it was empty
     await job.save();
 
     user.postedJobs.push(job._id);
@@ -162,6 +167,7 @@ app.post('/api/jobs', async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+
 
 // ✅ Get all jobs
 app.get("/api/jobs", async (req, res) => {
