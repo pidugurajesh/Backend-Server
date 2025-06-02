@@ -19,6 +19,9 @@ app.use(express.json());
 // ✅ Connect to MongoDB
 connectDB();
 
+// Helper function to validate ObjectId
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
 // ✅ In-memory OTP Store
 const otpStore = new Map();
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -135,12 +138,20 @@ app.post('/api/login', async (req, res) => {
 
 // ✅ Post a Job
 app.post('/api/jobs', async (req, res) => {
+  const { postedBy } = req.body;
+
+  if (!postedBy)
+    return res.status(400).json({ success: false, message: 'postedBy field is required' });
+
+  if (!isValidObjectId(postedBy))
+    return res.status(400).json({ success: false, message: 'Invalid postedBy user ID format' });
+
   try {
+    const user = await User.findById(postedBy);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
     const job = new Job(req.body);
     await job.save();
-
-    const user = await User.findById(job.postedBy);
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
     user.postedJobs.push(job._id);
     await user.save();
@@ -165,26 +176,30 @@ app.get("/api/jobs", async (req, res) => {
 
 // ✅ Accept Job
 app.post('/api/job/accept', async (req, res) => {
-  try {
-    const { userId, jobId } = req.body;
+  const { userId, jobId } = req.body;
 
+  if (!userId || !jobId)
+    return res.status(400).json({ success: false, message: 'User ID and Job ID are required' });
+
+  if (!isValidObjectId(userId) || !isValidObjectId(jobId)) {
+    return res.status(400).json({ success: false, message: 'Invalid User ID or Job ID format' });
+  }
+
+  try {
     const user = await User.findById(userId);
     const job = await Job.findById(jobId);
 
-    if (!user || !job) {
+    if (!user || !job)
       return res.status(404).json({ success: false, message: 'User or Job not found' });
+
+    if (!user.acceptedJobs.includes(jobId)) {
+      user.acceptedJobs.push(jobId);
+      await user.save();
     }
 
-    if (user.acceptedJobs.includes(jobId)) {
-      return res.status(400).json({ success: false, message: 'Job already accepted' });
-    }
-
-    user.acceptedJobs.push(jobId);
-    await user.save();
-
-    res.status(200).json({ success: true, message: 'Job accepted successfully' });
+    res.status(200).json({ success: true, message: 'Job accepted successfully', acceptedJobs: user.acceptedJobs });
   } catch (error) {
-    console.error("Error accepting job:", error.message);
+    console.error('Error accepting job:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -195,6 +210,10 @@ app.post('/api/job/complete', async (req, res) => {
 
   if (!userId || !jobId || !amount)
     return res.status(400).json({ success: false, message: 'All fields required' });
+
+  if (!isValidObjectId(userId) || !isValidObjectId(jobId)) {
+    return res.status(400).json({ success: false, message: 'Invalid User ID or Job ID format' });
+  }
 
   try {
     const user = await User.findById(userId);
