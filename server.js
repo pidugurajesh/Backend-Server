@@ -9,7 +9,7 @@ const bcrypt = require('bcrypt');
 
 // Models & DB
 const User = require("./models/User");
-const Job = require("./models/Job");  // Ensure correct capitalization if file is "Job.js"
+const Job = require("./models/job");  // Fixed import to match filename "job.js"
 const connectDB = require('./db');
 
 const app = express();
