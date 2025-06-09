@@ -1,4 +1,6 @@
+// server.js
 require("dotenv").config();
+console.log("Loaded environment variables:", process.env);
 const express = require("express");
 const cors = require("cors");
 const twilio = require("twilio");
@@ -7,7 +9,7 @@ const bcrypt = require('bcrypt');
 
 // Models & DB
 const User = require("./models/User");
-const Job = require("./models/job");
+const Job = require("./models/Job");  // Ensure correct capitalization if file is "Job.js"
 const connectDB = require('./db');
 
 const app = express();
@@ -16,13 +18,13 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// ✅ Connect to MongoDB
+// Connect to MongoDB
 connectDB();
 
 // Helper function to validate ObjectId
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-// ✅ In-memory OTP Store
+// In-memory OTP Store
 const otpStore = new Map();
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -72,7 +74,7 @@ const verifyOtpService = async (phoneNumber, code) => {
 
 // ========== Routes ==========
 
-// ✅ Send OTP
+// Send OTP
 app.post("/api/otp/send", async (req, res) => {
   const { phoneNumber } = req.body;
   if (!phoneNumber) return res.status(400).json({ success: false, message: "Phone number is required" });
@@ -81,16 +83,17 @@ app.post("/api/otp/send", async (req, res) => {
   res.json(result);
 });
 
-// ✅ Verify OTP
+// Verify OTP
 app.post("/api/otp/verify", async (req, res) => {
   const { phoneNumber, code } = req.body;
-  if (!phoneNumber || !code) return res.status(400).json({ success: false, message: "Phone number and OTP code are required" });
+  if (!phoneNumber || !code)
+    return res.status(400).json({ success: false, message: "Phone number and OTP code are required" });
 
   const result = await verifyOtpService(phoneNumber, code);
   res.json(result);
 });
 
-// ✅ Register
+// Register
 app.post('/api/register', async (req, res) => {
   const { email, username, password, phoneNumber } = req.body;
 
@@ -116,9 +119,10 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// ✅ Login
+// Login
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
+
   if (!email || !password)
     return res.status(400).json({ message: "Please provide both email and password" });
 
@@ -129,14 +133,20 @@ app.post('/api/login', async (req, res) => {
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) return res.status(401).json({ message: "Invalid credentials" });
 
-    return res.status(200).json({ message: "Login successful", userId: user._id });
+    // ✅ Return username as "name" for frontend
+    return res.status(200).json({
+      message: "Login successful",
+      userId: user._id,
+      name: user.username // <-- Include this in response
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "Server error" });
   }
 });
 
-// ✅ Post a Job
+
+// Post a Job
 app.post('/api/jobs', async (req, res) => {
   const { postedBy, _id } = req.body;
 
@@ -146,7 +156,7 @@ app.post('/api/jobs', async (req, res) => {
   if (!isValidObjectId(postedBy))
     return res.status(400).json({ success: false, message: 'Invalid postedBy user ID format' });
 
-  // ✅ Delete empty _id if present
+  // Delete empty _id if present
   if (_id === "") {
     delete req.body._id;
   }
@@ -155,7 +165,7 @@ app.post('/api/jobs', async (req, res) => {
     const user = await User.findById(postedBy);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    const job = new Job(req.body); // _id is now safely removed if it was empty
+    const job = new Job(req.body);
     await job.save();
 
     user.postedJobs.push(job._id);
@@ -168,11 +178,12 @@ app.post('/api/jobs', async (req, res) => {
   }
 });
 
-
-// ✅ Get all jobs
+// Updated: Get all jobs with poster's username (and phone number if needed)
 app.get("/api/jobs", async (req, res) => {
   try {
-    const jobs = await Job.find();
+    const jobs = await Job.find()
+      .populate('postedBy', 'username phoneNumber'); // Adjust fields as required
+
     res.status(200).json(jobs);
   } catch (error) {
     console.error("Error fetching jobs:", error);
@@ -180,7 +191,7 @@ app.get("/api/jobs", async (req, res) => {
   }
 });
 
-// ✅ Accept Job
+// Accept Job
 app.post('/api/job/accept', async (req, res) => {
   const { userId, jobId } = req.body;
 
@@ -210,7 +221,7 @@ app.post('/api/job/accept', async (req, res) => {
   }
 });
 
-// ✅ Complete Job
+// Complete Job
 app.post('/api/job/complete', async (req, res) => {
   const { userId, jobId, amount } = req.body;
 
@@ -228,9 +239,12 @@ app.post('/api/job/complete', async (req, res) => {
     if (!user || !job)
       return res.status(404).json({ success: false, message: 'User or Job not found' });
 
+    // Remove the job from acceptedJobs list
     user.acceptedJobs = user.acceptedJobs.filter(id => id.toString() !== jobId);
+    // Add to completedJobs list if not already present
     if (!user.completedJobs.includes(jobId)) user.completedJobs.push(jobId);
 
+    // Record earnings
     user.earnings.push({
       jobId: job._id,
       amount,
@@ -239,14 +253,19 @@ app.post('/api/job/complete', async (req, res) => {
 
     await user.save();
 
-    res.status(200).json({ success: true, message: 'Job marked as completed', completedJobs: user.completedJobs, earnings: user.earnings });
+    res.status(200).json({
+      success: true,
+      message: 'Job marked as completed',
+      completedJobs: user.completedJobs,
+      earnings: user.earnings
+    });
   } catch (error) {
     console.error('Error completing job:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
-// ✅ Get user-specific data
+// Get user-specific data
 app.get('/api/user/:email/data', async (req, res) => {
   try {
     const user = await User.findOne({ email: req.params.email })
@@ -279,7 +298,7 @@ app.get('/api/user/:email/data', async (req, res) => {
   }
 });
 
-// ✅ Start server
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
