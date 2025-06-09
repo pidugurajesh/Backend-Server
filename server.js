@@ -182,7 +182,7 @@ app.post('/api/jobs', async (req, res) => {
 app.get("/api/jobs", async (req, res) => {
   try {
     const jobs = await Job.find()
-      .populate('postedBy', 'username phoneNumber'); // Adjust fields as required
+      .populate('_id', 'username phoneNumber'); // Adjust fields as required
 
     res.status(200).json(jobs);
   } catch (error) {
